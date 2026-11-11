@@ -1,0 +1,5 @@
+# Runtime: stdlib only (urllib for HTTP calls to Ollama, sqlite3, ast, etc.)
+# so there's nothing to install to run cli.py beyond Ollama itself.
+
+# Dev/test:
+pytest>=8.0
