@@ -48,3 +48,16 @@ def test_tool_schema_shape():
     assert schema["type"] == "function"
     assert schema["function"]["name"] == "calculator"
     assert "expression" in schema["function"]["parameters"]["properties"]
+
+
+def test_calculator_nested_tool_call_gives_actionable_error():
+    # Regression: llama3.2 tried "(14 * 3) + (get_current_time().weekday() + 1)"
+    # and misread the old AST-dump error as "get_current_time doesn't exist".
+    with pytest.raises(ToolError, match="call the other tool on its own first"):
+        registry.get("calculator").call({"expression": "(14 * 3) + (get_current_time().weekday() + 1)"})
+
+
+def test_get_current_time_includes_weekday_number():
+    result = registry.get("get_current_time").call({})
+    assert 1 <= result["weekday_number"] <= 7
+    assert isinstance(result["weekday"], str)

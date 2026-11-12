@@ -50,6 +50,9 @@ ollama pull llama3.2              # ~2GB, good default
 ollama pull nomic-embed-text      # small embedding model, powers search_notes
 ```
 
+The CLI uses `llama3.2` unless you set `LOCAL_AGENT_MODEL`, e.g.
+`LOCAL_AGENT_MODEL=qwen2.5:7b-instruct python cli.py`.
+
 **3. Install Python dev dependencies** (stdlib only for runtime; pytest
 for tests):
 

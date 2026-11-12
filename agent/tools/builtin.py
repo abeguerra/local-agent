@@ -57,6 +57,16 @@ def _safe_eval(node: ast.AST) -> float:
         return _OPS[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))
     if isinstance(node, ast.UnaryOp) and type(node.op) in _OPS:
         return _OPS[type(node.op)](_safe_eval(node.operand))
+    if isinstance(node, (ast.Call, ast.Name, ast.Attribute)):
+        # Small models often try to nest one tool inside another, e.g.
+        # "42 + get_current_time().weekday()". Say plainly what to do
+        # instead -- a raw AST dump just makes them conclude the other
+        # tool doesn't exist.
+        raise ToolError(
+            "the calculator only accepts numbers and arithmetic operators -- no function calls or names. "
+            "Tools cannot be called inside other tools' arguments: call the other tool on its own first, "
+            "then pass its result here as a number."
+        )
     raise ToolError(f"unsupported expression: {ast.dump(node)}")
 
 
@@ -84,12 +94,19 @@ def calculator(expression: str) -> dict:
 
 @registry.register(
     name="get_current_time",
-    description="Get the current date and time. Use this instead of guessing -- you do not otherwise know what day it is.",
+    description=(
+        "Get the current date and time, including the weekday name and its ISO number (1 = Monday ... 7 = Sunday). "
+        "Use this instead of guessing -- you do not otherwise know what day it is."
+    ),
     parameters={"type": "object", "properties": {}, "required": []},
 )
 def get_current_time() -> dict:
     now = dt.datetime.now()
-    return {"iso": now.isoformat(timespec="seconds"), "weekday": now.strftime("%A")}
+    return {
+        "iso": now.isoformat(timespec="seconds"),
+        "weekday": now.strftime("%A"),
+        "weekday_number": now.isoweekday(),  # 1 = Monday ... 7 = Sunday
+    }
 
 
 # ---------------------------------------------------------------------------

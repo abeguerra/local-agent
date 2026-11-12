@@ -9,6 +9,7 @@ see README.md.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -33,7 +34,9 @@ def confirm_callback(name: str, arguments: dict) -> bool:
 
 
 def main() -> None:
-    llm = OllamaClient(model="llama3.2")
+    # Override with e.g. LOCAL_AGENT_MODEL=qwen2.5:7b-instruct for more
+    # reliable multi-step tool use (pull it first with `ollama pull`).
+    llm = OllamaClient(model=os.environ.get("LOCAL_AGENT_MODEL", "llama3.2"))
 
     # Wire up the local notes RAG tool. If embeddings aren't available
     # (model not pulled yet), carry on without it -- the other tools
