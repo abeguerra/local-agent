@@ -150,6 +150,38 @@ retrieval that always runs before an agent starts, or a
 deterministic save/notify step after it finishes, wrapped around an
 autonomous loop in the middle.
 
+## `agent/skills.py` — instructions loaded on demand
+
+A skill is a `skills/<name>/SKILL.md` file: `name` and `description`
+frontmatter, then markdown instructions. This is the format of
+Anthropic's Agent Skills, used by Claude Code, the Claude apps and the
+Agent SDK, without the bundled scripts and resource files those
+support. The idea it demonstrates is **progressive disclosure**. The
+system prompt carries only each skill's name and description. When a
+request matches, the model calls `load_skill`, and the full
+instructions arrive as a tool result for that conversation only. You
+can have many skills without every model call paying for all of their
+text.
+
+A skill is not a workflow. `skills/notes-answer/SKILL.md` describes
+the same steps as `NotesQAWorkflow`, deliberately, so the two can be
+compared. The workflow runs those steps because Python runs them. The
+skill runs them only if the model reads them and decides to follow
+them. A skill handles requests nobody anticipated and costs nothing to
+add, but it is still the agent path: nothing enforces the steps, and
+how well it works depends heavily on the model. In local trials,
+`qwen2.5:7b-instruct` usually followed skills through, while `llama3.2`
+often tried to call a skill's name as though it were a tool. That
+prompted the explicit "skills are NOT tools" line in the system prompt
+and the `enum` of skill names in `load_skill`'s schema.
+
+One alternative worth knowing about is registering each skill as its
+own zero-argument tool instead of a single `load_skill(name)`. It
+matches what small models try to do anyway and did slightly better in
+the same trials, at the cost of one tool schema per skill. The design
+here stays with one loader tool, as Claude Code does, because the tool
+list stays the same size however many skills you add.
+
 ## `agent/llm.py` — the model-agnostic client
 
 Companies rarely call a model provider's SDK directly from inside

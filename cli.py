@@ -15,10 +15,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from agent.core import Agent
+from agent.core import SYSTEM_PROMPT, Agent
 from agent.guardrails import Guardrails, GuardrailConfig
 from agent.llm import OllamaClient
 from agent.memory import VectorMemory
+from agent.skills import load_skills, register_skill_tool, skills_prompt_section
 from agent.tools import registry
 from agent.tools import builtin  # noqa: F401  -- registers calculator/time/file tools
 from agent.tools.notes_search import init_notes_tool
@@ -52,8 +53,22 @@ def main() -> None:
     except Exception as e:  # noqa: BLE001 -- best-effort setup, not core functionality
         print(f"(notes search unavailable: {e})")
 
+    # Skills: only names + descriptions go into the system prompt; the
+    # agent pulls a skill's full instructions in with load_skill when a
+    # request matches. See agent/skills.py.
+    skills = load_skills(ROOT / "skills")
+    if skills:
+        register_skill_tool(registry, skills)
+        print(f"(skills available: {', '.join(skills)})")
+
     guardrails = Guardrails(GuardrailConfig(max_steps=8))
-    agent = Agent(llm=llm, tools=registry, guardrails=guardrails, confirm_callback=confirm_callback)
+    agent = Agent(
+        llm=llm,
+        tools=registry,
+        guardrails=guardrails,
+        system_prompt=SYSTEM_PROMPT + skills_prompt_section(skills),
+        confirm_callback=confirm_callback,
+    )
     notes_qa = NotesQAWorkflow(llm=llm, tools=registry, guardrails=guardrails, confirm_callback=confirm_callback)
 
     print("Local agent ready. Tools:", ", ".join(registry.names()))

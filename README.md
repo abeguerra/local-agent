@@ -31,7 +31,11 @@ this file is just setup and a tour.
 - a sample workflow (`agent/workflows.py`): the same tools, but called
   in a fixed order by code instead of chosen by the model — the
   "workflow vs. agent" distinction from `docs/ARCHITECTURE.md`, runnable
-- 33 offline tests (`tests/`) that exercise the whole loop — including
+- skills (`agent/skills.py`, `skills/`): `SKILL.md` instruction files
+  the agent loads on demand through a `load_skill` tool, in the same
+  shape as Anthropic's Agent Skills. Only their names and descriptions
+  sit in the system prompt
+- 43 offline tests (`tests/`) that exercise the whole loop — including
   the guardrail stop condition — using a fake LLM, no network required
 
 ## Setup
@@ -124,6 +128,21 @@ Run `trace` afterwards and compare it with an agent run: the tool calls
 are the same kind of event, but there's only one LLM call and it was
 offered 0 tools.
 
+### Skills
+
+At startup the CLI prints `(skills available: meeting-notes, notes-answer)`.
+Paste some rough meeting notes and the agent should call `load_skill`,
+read the instructions in `skills/meeting-notes/SKILL.md`, and write a
+formatted summary to `workspace/meetings/`. To add a skill, create
+`skills/<name>/SKILL.md` with `name` and `description` frontmatter and
+restart the CLI.
+
+Skills are where model choice shows up most. In a few local trial runs,
+`qwen2.5:7b-instruct` loaded the right skill and followed it through
+most of the time. `llama3.2` usually tried to call the skill's name as
+if it were a tool, or picked the wrong skill. Use
+`LOCAL_AGENT_MODEL=qwen2.5:7b-instruct` when trying skills.
+
 ## Project layout
 
 ```
@@ -134,13 +153,15 @@ agent/
   guardrails.py     loop limit, tool allowlist, confirmation hook
   trace.py          JSONL structured tracing + pretty-printer
   workflows.py      sample workflow: code-driven tool calls (notes Q&A)
+  skills.py         SKILL.md loader + the load_skill tool
   tools/
     __init__.py     the tool registry (JSON Schema based)
     builtin.py      calculator, get_current_time, file read/write/list
     notes_search.py the RAG search tool over data/notes/
 cli.py               interactive REPL
-tests/               33 offline tests using FakeLLM, no network needed
+tests/               43 offline tests using FakeLLM, no network needed
 data/notes/          sample markdown notes, indexed by search_notes
+skills/              sample skills: meeting-notes, notes-answer
 workspace/           sandbox directory read_file/write_file are confined to
 docs/ARCHITECTURE.md the deep dive: what each piece maps to in real systems
 ```
