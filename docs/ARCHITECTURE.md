@@ -7,14 +7,23 @@ pattern, product, or published guidance it's a minimal version of.
 
 ## The system at a glance
 
-How the modules fit together. `cli.py` wires everything up; `Agent`
-owns the loop and the short-term memory, and everything else is
-something the loop calls out to.
+How the modules fit together. `cli.py` wires everything up and sends
+each input down one of two paths: the `Agent` loop, where the model
+chooses the tools, or `NotesQAWorkflow` for `/notes`, where code
+chooses them. Both paths make their tool calls through the same
+`run_tool()`, so guardrails and tracing apply to either one. Skills are
+loaded at startup. Their names go into the agent's system prompt, and
+their instructions are reached through the `load_skill` tool.
 
 ```mermaid
 flowchart LR
     user([User]) <--> cli["cli.py<br/>REPL + confirm prompt"]
-    cli --> agent
+    cli -- "any other input" --> agent
+    cli -- "/notes question" --> wf["agent/workflows.py<br/>NotesQAWorkflow<br/>(steps fixed in code)"]
+
+    skilldir[("skills/*/SKILL.md")] --> skills["agent/skills.py<br/>load_skills"]
+    skills -- "names + descriptions<br/>into system prompt" --> agent
+    skills -- "registers" --> loadskill["load_skill<br/>(returns instructions)"]
 
     subgraph agent["agent/core.py — Agent"]
         loop["run() loop<br/>max_steps"]
@@ -22,20 +31,26 @@ flowchart LR
         loop <--> buf
     end
 
-    loop -- "check_input / check_tool_allowed /<br/>needs_confirmation" --> guard["agent/guardrails.py<br/>Guardrails"]
     loop -- "chat(messages, tool schemas)" --> llm["agent/llm.py<br/>LLMClient"]
+    wf -- "chat(messages, tools=[])" --> llm
     llm -.-> ollama["OllamaClient"] --> ollamad[("Ollama server<br/>localhost:11434")]
     llm -.-> fake["FakeLLM<br/>(tests)"]
 
-    loop -- "get(name).call(args)" --> reg["agent/tools/<br/>ToolRegistry"]
+    loop -- "calls the model chose" --> runtool["agent/core.py<br/>run_tool()"]
+    wf -- "calls fixed in code" --> runtool
+    runtool -- "check_tool_allowed /<br/>needs_confirmation" --> guard["agent/guardrails.py<br/>Guardrails"]
+    runtool -- "get(name).call(args)" --> reg["agent/tools/<br/>ToolRegistry"]
     reg --> builtin["builtin.py<br/>calculator, time,<br/>list/read/write file"]
     reg --> notes["notes_search.py<br/>search_notes"]
+    reg --> loadskill
     builtin --> ws[("workspace/")]
     notes --> vec["agent/memory.py<br/>VectorMemory"]
     vec --> sqlite[("data/notes_index.sqlite3")]
     vec -- "embed()" --> ollama
 
-    loop -- "log(event)" --> trace["agent/trace.py<br/>Trace"] --> jsonl[("data/traces/*.jsonl")]
+    runtool -- "log(event)" --> trace["agent/trace.py<br/>Trace"] --> jsonl[("data/traces/*.jsonl")]
+    loop -- "log(event)" --> trace
+    wf -- "log(event)" --> trace
 ```
 
 And one call to `Agent.run()`, step by step:
@@ -47,7 +62,7 @@ flowchart TD
     addMsg --> llmChat["llm.chat(messages, tool schemas)"]
     llmChat --> hasTools{"tool calls?"}
     hasTools -- no --> finalAnswer(["return final answer"])
-    hasTools -- yes --> runTools["for each call:<br/>allowlist → confirm → tool.call()"]
+    hasTools -- yes --> runTools["for each call, run_tool():<br/>allowlist → confirm → tool.call()"]
     runTools --> addResult["append result as 'tool' message<br/>(errors returned as ERROR: …)"]
     addResult --> underLimit{"step &lt; max_steps?"}
     underLimit -- yes --> llmChat
@@ -140,6 +155,17 @@ relevant, code returns early without calling the model at all. That
 early return is a stopping condition the agent loop can only *hope*
 the model applies to itself.
 
+```mermaid
+flowchart TD
+    q(["/notes question"]) --> time["run_tool: get_current_time"]
+    time --> search["run_tool: search_notes"]
+    search --> relevant{"search ok and a hit<br/>scoring ≥ min_score?"}
+    relevant -- no --> stop(["return early<br/>(model never called)"])
+    relevant -- yes --> answer["llm.chat(notes + question, tools=[])"]
+    answer --> save["run_tool: write_file<br/>(confirm prompt still applies)"]
+    save --> done(["return answer + saved path"])
+```
+
 The detail worth copying is that the workflow's tool calls go through
 the same `run_tool` function in `agent/core.py` as the agent's do, so
 the allowlist, the `write_file` confirmation and tracing all still
@@ -162,6 +188,21 @@ request matches, the model calls `load_skill`, and the full
 instructions arrive as a tool result for that conversation only. You
 can have many skills without every model call paying for all of their
 text.
+
+```mermaid
+sequenceDiagram
+    participant C as cli.py
+    participant A as Agent loop
+    participant M as Model
+    participant T as run_tool()
+    C->>A: system prompt with each skill's name and description
+    A->>M: user request + tool schemas (including load_skill)
+    M-->>A: tool call load_skill(name="meeting-notes")
+    A->>T: load_skill
+    T-->>A: full SKILL.md instructions
+    A->>M: instructions as a tool message
+    M-->>A: get_current_time, write_file ... only if it follows them
+```
 
 A skill is not a workflow. `skills/notes-answer/SKILL.md` describes
 the same steps as `NotesQAWorkflow`, deliberately, so the two can be

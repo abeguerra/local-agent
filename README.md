@@ -83,21 +83,23 @@ python3 cli.py
 ## Example session
 
 ```
-Local agent ready. Tools: calculator, get_current_time, list_workspace_files, read_file, write_file, search_notes
-Type 'exit' to quit, 'trace' to show the last run's trace.
+(skills available: meeting-notes, notes-answer)
+Local agent ready. Tools: calculator, get_current_time, list_workspace_files, read_file, write_file, search_notes, load_skill
+Type 'exit' to quit, 'trace' to show the last run's trace,
+or '/notes <question>' to run the notes Q&A workflow instead of the agent.
 
 you> what's (14 * 3) + today's weekday?
 agent> 14 * 3 is 42. Today is Thursday.
 
 you> trace
 [01] USER        "what's (14 * 3) + today's weekday?"
-[02] LLM ->      sending 2 messages, 6 tools available
+[02] LLM ->      sending 2 messages, 7 tools available
 [03] LLM <-      wants to call: calculator, get_current_time
 [04] TOOL ->     calculator({'expression': '14 * 3'})
 [05] TOOL <-     calculator -> ok  (0ms)
 [06] TOOL ->     get_current_time({})
 [07] TOOL <-     get_current_time -> ok  (0ms)
-[08] LLM ->      sending 4 messages, 6 tools available
+[08] LLM ->      sending 4 messages, 7 tools available
 [09] LLM <-      final answer (41 chars)
 [10] FINAL       "14 * 3 is 42. Today is Thursday."
 
