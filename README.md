@@ -28,7 +28,10 @@ this file is just setup and a tour.
 - structured JSONL tracing (`agent/trace.py`) — a minimal local
   stand-in for what LangSmith/Langfuse/Helicone give you in production,
   following the shape of OpenTelemetry's GenAI span conventions
-- 25 offline tests (`tests/`) that exercise the whole loop — including
+- a sample workflow (`agent/workflows.py`): the same tools, but called
+  in a fixed order by code instead of chosen by the model — the
+  "workflow vs. agent" distinction from `docs/ARCHITECTURE.md`, runnable
+- 33 offline tests (`tests/`) that exercise the whole loop — including
   the guardrail stop condition — using a fake LLM, no network required
 
 ## Setup
@@ -104,6 +107,23 @@ That confirmation prompt is the `confirm_before` guardrail in
 `agent/guardrails.py` firing on `write_file`. Change which tools require
 it, or turn it off, in `GuardrailConfig`.
 
+Prefix a question with `/notes` to run the notes Q&A **workflow**
+instead of the agent. Code searches the notes, makes one tool-free model
+call to write the answer, and saves it under `workspace/answers/`; the
+model never picks a tool:
+
+```
+you> /notes what is max_steps for?
+  [confirm] agent wants to call write_file({'path': 'answers/2026-11-13-what-is-max-steps-for.md', ...})
+  allow? [y/N] y
+agent> max_steps caps how many times the agent loop can call the model (guardrails.md).
+(saved to workspace/answers/2026-11-13-what-is-max-steps-for.md)
+```
+
+Run `trace` afterwards and compare it with an agent run: the tool calls
+are the same kind of event, but there's only one LLM call and it was
+offered 0 tools.
+
 ## Project layout
 
 ```
@@ -113,12 +133,13 @@ agent/
   memory.py         ConversationBuffer + VectorMemory (local RAG)
   guardrails.py     loop limit, tool allowlist, confirmation hook
   trace.py          JSONL structured tracing + pretty-printer
+  workflows.py      sample workflow: code-driven tool calls (notes Q&A)
   tools/
     __init__.py     the tool registry (JSON Schema based)
     builtin.py      calculator, get_current_time, file read/write/list
     notes_search.py the RAG search tool over data/notes/
 cli.py               interactive REPL
-tests/               25 offline tests using FakeLLM, no network needed
+tests/               33 offline tests using FakeLLM, no network needed
 data/notes/          sample markdown notes, indexed by search_notes
 workspace/           sandbox directory read_file/write_file are confined to
 docs/ARCHITECTURE.md the deep dive: what each piece maps to in real systems

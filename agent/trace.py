@@ -112,6 +112,11 @@ def pretty_print(path: str | Path) -> str:
                 lines.append(f"[{step:02d}] GUARDRAIL   blocked {rec.get('name')}: {rec.get('reason')}")
             elif event == "loop_limit_hit":
                 lines.append(f"[{step:02d}] GUARDRAIL   max_steps ({rec.get('max_steps')}) reached, stopping")
+            elif event == "workflow_start":
+                lines.append(f"[{step:02d}] WORKFLOW    {rec.get('workflow')} started: {rec.get('question')!r}")
+            elif event == "workflow_end":
+                outcome = f"saved {rec['saved_path']}" if rec.get("saved_path") else (rec.get("problem") or "done")
+                lines.append(f"[{step:02d}] WORKFLOW    {rec.get('workflow')} finished: {outcome}")
             elif event == "final_answer":
                 lines.append(f"[{step:02d}] FINAL       {rec.get('content')!r}")
             else:

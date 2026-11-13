@@ -23,6 +23,7 @@ from agent.tools import registry
 from agent.tools import builtin  # noqa: F401  -- registers calculator/time/file tools
 from agent.tools.notes_search import init_notes_tool
 from agent.trace import Trace, pretty_print
+from agent.workflows import NotesQAWorkflow
 
 ROOT = Path(__file__).resolve().parent
 
@@ -53,9 +54,11 @@ def main() -> None:
 
     guardrails = Guardrails(GuardrailConfig(max_steps=8))
     agent = Agent(llm=llm, tools=registry, guardrails=guardrails, confirm_callback=confirm_callback)
+    notes_qa = NotesQAWorkflow(llm=llm, tools=registry, guardrails=guardrails, confirm_callback=confirm_callback)
 
     print("Local agent ready. Tools:", ", ".join(registry.names()))
-    print("Type 'exit' to quit, 'trace' to show the last run's trace.\n")
+    print("Type 'exit' to quit, 'trace' to show the last run's trace,")
+    print("or '/notes <question>' to run the notes Q&A workflow instead of the agent.\n")
 
     trace = None
     while True:
@@ -77,7 +80,15 @@ def main() -> None:
 
         trace = Trace.start(ROOT / "data" / "traces")
         try:
-            answer = agent.run(user_input, trace=trace)
+            if user_input.startswith("/notes "):
+                result = notes_qa.run(user_input.removeprefix("/notes ").strip(), trace=trace)
+                answer = result.answer
+                if result.saved_path:
+                    answer += f"\n(saved to workspace/{result.saved_path})"
+                elif result.problem:
+                    answer += f"\n({result.problem})"
+            else:
+                answer = agent.run(user_input, trace=trace)
         except ConnectionError as e:
             print(f"\n[error] {e}")
             continue

@@ -28,6 +28,7 @@ guardrails, and the observability around it, not the loop.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from agent.guardrails import Guardrails, GuardrailViolation
@@ -114,25 +115,60 @@ class Agent:
         return giveup_message
 
     def _execute_tool(self, name: str, arguments: dict, trace: Trace) -> str:
-        import time
+        outcome = run_tool(
+            name,
+            arguments,
+            tools=self.tools,
+            guardrails=self.guardrails,
+            confirm_callback=self.confirm_callback,
+            trace=trace,
+        )
+        if outcome.ok:
+            return str(outcome.value)
+        # Errors go back to the MODEL as a tool result (not raised to
+        # the caller) so it can self-correct -- e.g. retry with fixed
+        # arguments, or explain the limitation to the user. This is
+        # the "ground truth from the environment" feedback loop.
+        return f"ERROR: {outcome.error}"
 
-        trace.log("tool_call_start", name=name, arguments=arguments)
-        start = time.monotonic()
-        try:
-            self.guardrails.check_tool_allowed(name)
-            if self.guardrails.needs_confirmation(name):
-                if not self.confirm_callback(name, arguments):
-                    raise GuardrailViolation(f"user declined to confirm tool call '{name}'")
-            tool = self.tools.get(name)
-            result = tool.call(arguments)
-            duration_ms = int((time.monotonic() - start) * 1000)
-            trace.log("tool_call_end", name=name, result=result, duration_ms=duration_ms)
-            return str(result)
-        except (ToolError, GuardrailViolation) as e:
-            duration_ms = int((time.monotonic() - start) * 1000)
-            trace.log("tool_call_end", name=name, error=str(e), duration_ms=duration_ms)
-            # Errors go back to the MODEL as a tool result (not raised to
-            # the caller) so it can self-correct -- e.g. retry with fixed
-            # arguments, or explain the limitation to the user. This is
-            # the "ground truth from the environment" feedback loop.
-            return f"ERROR: {e}"
+
+@dataclass
+class ToolOutcome:
+    ok: bool
+    value: object = None
+    error: str = ""
+
+
+def run_tool(
+    name: str,
+    arguments: dict,
+    *,
+    tools: ToolRegistry,
+    guardrails: Guardrails,
+    confirm_callback,
+    trace: Trace,
+) -> ToolOutcome:
+    """Execute one tool call behind the guardrails, with tracing.
+
+    This is the single path every tool call takes, whoever decided to
+    make it: the agent loop above (the model chose the tool) and the
+    workflows in agent/workflows.py (your code chose it) both go
+    through here, so the allowlist, the confirm-before-destructive
+    hook, and the trace apply either way. Never raises for tool or
+    guardrail errors -- they come back as `ok=False` so each caller
+    decides what to do with them."""
+    trace.log("tool_call_start", name=name, arguments=arguments)
+    start = time.monotonic()
+    try:
+        guardrails.check_tool_allowed(name)
+        if guardrails.needs_confirmation(name):
+            if not confirm_callback(name, arguments):
+                raise GuardrailViolation(f"user declined to confirm tool call '{name}'")
+        result = tools.get(name).call(arguments)
+        duration_ms = int((time.monotonic() - start) * 1000)
+        trace.log("tool_call_end", name=name, result=result, duration_ms=duration_ms)
+        return ToolOutcome(ok=True, value=result)
+    except (ToolError, GuardrailViolation) as e:
+        duration_ms = int((time.monotonic() - start) * 1000)
+        trace.log("tool_call_end", name=name, error=str(e), duration_ms=duration_ms)
+        return ToolOutcome(ok=False, error=str(e))

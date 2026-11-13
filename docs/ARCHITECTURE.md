@@ -90,10 +90,12 @@ until the critic is satisfied). A lot of what gets marketed as "an AI
 agent" in a company's product is actually one of these — cheaper,
 faster, and easier to debug than a fully autonomous loop, because the
 control flow is still code, not something the model decides at
-runtime. This project implements the fully autonomous pattern (section
+runtime. This project centers on the fully autonomous pattern (section
 below) because that's the hardest one to understand by reading about
-it, but if you're sizing up a real project, start by asking whether a
-workflow pattern already solves it before reaching for an agent loop.
+it, and includes one small workflow for contrast (`agent/workflows.py`,
+covered further down). If you're sizing up a real project, start by
+asking whether a workflow pattern already solves it before reaching for
+an agent loop.
 
 ## `agent/core.py` — the autonomous agent loop
 
@@ -125,6 +127,28 @@ CrewAI's task execution, and Microsoft's AutoGen conversational agents.
 What differs between them is mostly the scaffolding around the loop —
 state persistence, multi-agent message routing, built-in tool
 integrations, streaming — not the loop's core shape.
+
+## `agent/workflows.py` — the same tools, called by code
+
+`NotesQAWorkflow` is a prompt chain with the tool calls fixed in code:
+`get_current_time`, then `search_notes` on the question, then one model
+call with **no tools offered** to write the answer, then `write_file`
+to save it under `workspace/answers/`. The model's only job is the
+language step. It can't skip retrieval, invent a file path, or spend
+three round-trips deciding what to do, and if search finds nothing
+relevant, code returns early without calling the model at all. That
+early return is a stopping condition the agent loop can only *hope*
+the model applies to itself.
+
+The detail worth copying is that the workflow's tool calls go through
+the same `run_tool` function in `agent/core.py` as the agent's do, so
+the allowlist, the `write_file` confirmation and tracing all still
+apply. "Our code made this call, not the model" is not a reason to
+skip a guardrail. The guardrail exists because of what the action
+does, not who chose it. Production systems mix the two styles all the time:
+retrieval that always runs before an agent starts, or a
+deterministic save/notify step after it finishes, wrapped around an
+autonomous loop in the middle.
 
 ## `agent/llm.py` — the model-agnostic client
 
